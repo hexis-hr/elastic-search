@@ -1,10 +1,6 @@
 <?php
 
-define('version_assert', true);
-function assertTrue ($condition) {
-  if (!$condition)
-    throw new Exception("E");
-}
+// require 'libraries/phops';
 
 // autoload Elastica
 call_user_func(function () {
@@ -36,6 +32,87 @@ class elasticSearch {
   
   function query ($query = array()) {
     return new elasticQuery($this->client, $query);
+  }
+  
+  function mapping ($mapping) {
+    version_assert and assertTrue(is_array($mapping));
+    
+    if (count(array_filter($mapping, 'is_int')) == 0) {
+      $indexes = array();
+      foreach ($mapping as $mapping_) {
+        if (is_string($mapping_['index']))
+          $indexName = $mapping_['index'];
+        else
+          $indexName = $mapping_['index']['name'];
+        
+        if (!array_key_exists($indexName, $indexes))
+          $indexes[$indexName] = array(
+            'types' => array(),
+            'analysis' => array(),
+          );
+        
+        $typeName = $mapping_['type'];
+        
+        $indexes[$indexName]['types'][$typeName] = array(
+          'properties' => $mapping_['properties'],
+        );
+        
+        if (is_array($mapping_['index']) && array_key_exists('analysis', $mapping_['index']))
+          foreach ($mapping_['index']['analysis'] as $analysisGroupName => $analysisGroup) {
+            if (!array_key_exists($analysisGroupName, $indexes[$indexName]['analysis']))
+              $indexes[$indexName]['analysis'][$analysisGroupName] = array();
+            foreach ($analysisGroup as $analysisEntryName => $analysisEntry) {
+              version_assert and assertTrue(!array_key_exists($analysisEntryName,
+                $indexes[$indexName]['analysis'][$analysisGroupName]));
+              $indexes[$indexName]['analysis'][$analysisGroupName][$analysisEntryName] = $analysisEntry;
+            }
+          }
+        
+      }
+    }
+    
+    foreach ($indexes as $indexName => $indexMapping) {
+      $index = $this->client->getIndex($indexName);
+      
+      //$index->delete();
+      
+      if (!$index->exists())
+        $index->create(array('analysis' => $indexMapping['analysis']));
+      
+      //var_dump($index->getSettings());
+      //exit;
+      
+      foreach ($indexMapping['types'] as $typeName => $typeMapping) {
+        $elasticMapping = new \Elastica\Type\Mapping();
+        $elasticMapping->setType($index->getType($typeName));
+        $elasticMapping->setProperties($typeMapping['properties']);
+        $elasticMapping->send();
+      }
+
+    }
+
+  }
+  
+  /*
+  function index ($name, $settings) {
+    $index = $this->client->getIndex($name);
+    //if ($index->exists())
+      $index->delete();
+      
+    if (!$index->exists())
+      $index->create($settings);
+      //var_dump($settings);
+      //exit;
+    //$index->setSettings($settings);
+  }
+  /**/
+  
+  function set ($document) {
+    $this->client
+      ->getIndex($document['index'])
+      ->getType($document['type'])
+      ->addDocument(new \Elastica\Document($document['properties']['id'], $document['properties']))
+    ;
   }
   
 }
@@ -75,7 +152,8 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
       version_assert and assertTrue($match[2] == '$' || $match[2] <= count($this));
       return $this->opSlice($match[1], $match[2]);
     }
-    assertTrue(false);
+    $this->ensureBufferData($offset);
+    return $this->buffer[$offset];
   }
 
   function offsetSet ($offset, $value) {
@@ -116,6 +194,12 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     $this->position++;
   }
   
+  function one () {
+    //var_dump(count($this));
+    version_assert and assertTrue($this->valid() && count($this) == 1);
+    return $this->current();
+  }
+  
   function opSlice ($from, $to) {
     version_assert and assertTrue(count(func_get_args()) == 2);
     $query = $this->query;
@@ -129,7 +213,11 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     $search = new Elastica\Search($this->client);
     
     if (array_key_exists('select', $query)) {
-      foreach ($query['select'] as $select) {
+      if (count($query['select']) == 1 && count(array_filter($query['select'], 'is_int')) == 0)
+        $selects = array($query['select']);
+      else
+        $selects = $query['select'];
+      foreach ($selects as $select) {
         version_assert and assertTrue(is_array($select) && count($select) == 1);
         if (key($select) == 'index')
           $search->addIndex(current($select));
@@ -178,12 +266,61 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     
     if (count($query) == 1) {
       $value = current($query);
+      
       $operator = 'term';
       if (is_array($value)) {
         $operator = $value['operator'];
+        unset($value['operator']);
+        //$fieldValue = $value['value'];
+        //unset($value['value']);
+        //$value[key($query)] = $fieldValue;
+        //$value = $value['value'];
+      }
+      
+      if (in_array($operator, array('term', 'text')) && is_array($value)) {
+        version_assert and assertTrue(count($value) == 1);
         $value = $value['value'];
       }
+      
+      if ($operator == 'string') {
+        return array(
+          'query_string' => array(
+            'fields' => array(key($query)),
+            'query' => $value['value'],
+          ),
+        );
+      }
+      
+      if ($operator == 'fuzzy_like_this') {
+        $value['like_text'] = $value['value'];
+        unset($value['value']);
+        $value['fields'] = array(key($query));
+        return array('fuzzy_like_this' => $value);
+        /*
+        return array(
+          'fuzzy_like_this' => array(
+            'fields' => array(key($query)),
+            'like_text' => $value['value'],
+          ),
+        );
+        /**/
+      }
+      
+      //if ($operator == 'fuzzy') {
+      //  return array($operator => array(key($query) => $value));
+      //}
+
+      //if (is_array($value) && count($value) == 1) {
+      //if (is_string($value))
+      //  return array('term' => array(key($query) => $value));
+      
+      //if (is_array($value) && count($value) == 2)
+      //  return array($value['operator'] => array(key($query) => $value['value']));
+      
+      //assertTrue(false);
+      
       return array($operator => array(key($query) => $value));
+      //return array($operator => $value);
     }
       
     return array('match_all' => (object) array());
