@@ -74,7 +74,9 @@ class elasticSearch {
     foreach ($indexes as $indexName => $indexMapping) {
       $index = $this->client->getIndex($indexName);
       
-      //$index->delete();
+			if (false)
+      if ($index->exists())
+        $index->delete();
       
       if (!$index->exists())
         $index->create(array('analysis' => $indexMapping['analysis']));
@@ -166,8 +168,11 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
   
   function count () {
     version_assert and assertTrue(count(debug_backtrace()) < 1024);
-    // todo: optimize
-    return count(self::executeElasticSearch($this->query));
+    list($search, $elasticQuery) = $this->elasticBind($this->query);
+    $count = $search->count($elasticQuery);
+    if (array_key_exists('limit', $this->query) && count($this->query['limit']) > 0)
+      $count = $this->query['limit'][1] - $this->query['limit'][0];
+    return $count;
   }
 
   protected $position = 0;
@@ -182,6 +187,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
 
   function key () {
     $keys = array_keys($this->buffer);
+    version_assert and assertTrue(count($keys) > 0);
     return $keys[0];
   }
 
@@ -208,8 +214,8 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     return new self($this->client, $query);
   }
   
-  function executeElasticSearch ($query) {
-  
+  function elasticBind ($query) {
+
     $search = new Elastica\Search($this->client);
     
     if (array_key_exists('select', $query)) {
@@ -230,8 +236,16 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     
     if (array_key_exists('where', $query))
       $rawQuery['query'] = self::parseWhere($query['where']);
-
-    $elasticQuery = new Elastica\Query($rawQuery);
+    
+    return array($search, new Elastica\Query($rawQuery));
+  }
+  
+  function executeElasticSearch ($query) {
+  
+    list($search, $elasticQuery) = $this->elasticBind($query);
+  
+    // overwrite default limit
+    $elasticQuery->setSize($search->count($elasticQuery));
     
     if (array_key_exists('limit', $query) && count($query['limit']) > 0) {
       $elasticQuery->setFrom($query['limit'][0]);
@@ -240,6 +254,10 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     }
 
     return $search->search($elasticQuery);
+  }
+  
+  function elasticQuery () {
+    return self::parseWhere($this->query['where']);
   }
 
   static function parseWhere ($query) {
