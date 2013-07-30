@@ -236,6 +236,11 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     
     if (array_key_exists('where', $query))
       $rawQuery['query'] = self::parseWhere($query['where']);
+
+    if (array_key_exists('order', $query)) {
+      version_assert and assertTrue(count(array_filter($query['order'], 'is_int')) == 0);
+      $rawQuery['sort'] = array_merge($query['order'], array('_score'));
+    }
     
     return array($search, new Elastica\Query($rawQuery));
   }
