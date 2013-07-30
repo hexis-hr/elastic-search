@@ -50,12 +50,13 @@ class elasticSearch {
             'types' => array(),
             'analysis' => array(),
           );
-        
-        $typeName = $mapping_['type'];
-        
-        $indexes[$indexName]['types'][$typeName] = array(
-          'properties' => $mapping_['properties'],
-        );
+          
+        if (array_key_exists('properties', $mapping_)) {
+          $typeName = $mapping_['type'];
+          $indexes[$indexName]['types'][$typeName] = array(
+            'properties' => $mapping_['properties'],
+          );
+        }
         
         if (is_array($mapping_['index']) && array_key_exists('analysis', $mapping_['index']))
           foreach ($mapping_['index']['analysis'] as $analysisGroupName => $analysisGroup) {
