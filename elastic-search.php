@@ -240,7 +240,18 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
 
     if (array_key_exists('order', $query)) {
       version_assert and assertTrue(count(array_filter($query['order'], 'is_int')) == 0);
-      $rawQuery['sort'] = array_merge($query['order'], array('_score'));
+      $sort = array_merge($query['order'], array(array('score' => 'desc')));
+      $rawQuery['sort'] = array();
+      foreach ($sort as $k => $v) {
+        version_assert and assertTrue(is_int($k));
+        version_assert and assertTrue(is_string($v) || count($v) == 1);
+        if (is_string($v) && $v == 'score')
+          $rawQuery['sort'][] = '_score';
+        else if (is_string(key($v)) && key($v) == 'score')
+          $rawQuery['sort'][] = array('_score' => current($v));
+        else
+          $rawQuery['sort'][] = $v;
+      }
     }
     
     return array($search, new Elastica\Query($rawQuery));
