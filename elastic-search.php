@@ -247,8 +247,13 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         version_assert and assertTrue(is_string($v) || count($v) == 1);
         if (is_string($v) && $v == 'score')
           $rawQuery['sort'][] = '_score';
-        else if (is_string(key($v)) && key($v) == 'score')
+        else if (is_array($v) && is_string(key($v)) && key($v) == 'score')
           $rawQuery['sort'][] = array('_score' => current($v));
+        else if (is_string($v) && preg_match('/[\*\s]/', $v))
+          $rawQuery['query'] = array('custom_score' => array(
+            'query' => $rawQuery['query'],
+            'script' => $v,
+          ));
         else
           $rawQuery['sort'][] = $v;
       }
