@@ -202,7 +202,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
   }
   
   function one () {
-    //var_dump(count($this));
+    $this->ensureBufferData();
     version_assert and assertTrue($this->valid() && count($this) == 1);
     return $this->current();
   }
