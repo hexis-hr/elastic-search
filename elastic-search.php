@@ -15,28 +15,28 @@ call_user_func(function () {
 });
 
 class elasticSearch {
-  
+
   protected static $instance;
-  
+
   static function instance () {
     if (self::$instance === null)
       self::$instance = new self();
     return self::$instance;
   }
-  
+
   protected $client;
 
   function __construct () {
     $this->client = new Elastica\Client();
   }
-  
+
   function query ($query = array()) {
     return new elasticQuery($this->client, $query);
   }
-  
+
   function mapping ($mapping) {
     version_assert and assertTrue(is_array($mapping));
-    
+
     if (count(array_filter($mapping, 'is_int')) == 0) {
       $indexes = array();
       foreach ($mapping as $mapping_) {
@@ -44,20 +44,20 @@ class elasticSearch {
           $indexName = $mapping_['index'];
         else
           $indexName = $mapping_['index']['name'];
-        
+
         if (!array_key_exists($indexName, $indexes))
           $indexes[$indexName] = array(
             'types' => array(),
             'analysis' => array(),
           );
-          
+
         if (array_key_exists('properties', $mapping_)) {
           $typeName = $mapping_['type'];
           $indexes[$indexName]['types'][$typeName] = array(
             'properties' => $mapping_['properties'],
           );
         }
-        
+
         if (is_array($mapping_['index']) && array_key_exists('analysis', $mapping_['index']))
           foreach ($mapping_['index']['analysis'] as $analysisGroupName => $analysisGroup) {
             if (!array_key_exists($analysisGroupName, $indexes[$indexName]['analysis']))
@@ -68,23 +68,23 @@ class elasticSearch {
               $indexes[$indexName]['analysis'][$analysisGroupName][$analysisEntryName] = $analysisEntry;
             }
           }
-        
+
       }
     }
-    
+
     foreach ($indexes as $indexName => $indexMapping) {
       $index = $this->client->getIndex($indexName);
-      
+
 			if (false)
       if ($index->exists())
         $index->delete();
-      
+
       if (!$index->exists())
         $index->create(array('analysis' => $indexMapping['analysis']));
-      
+
       //var_dump($index->getSettings());
       //exit;
-      
+
       foreach ($indexMapping['types'] as $typeName => $typeMapping) {
         $elasticMapping = new \Elastica\Type\Mapping();
         $elasticMapping->setType($index->getType($typeName));
@@ -95,13 +95,13 @@ class elasticSearch {
     }
 
   }
-  
+
   /*
   function index ($name, $settings) {
     $index = $this->client->getIndex($name);
     //if ($index->exists())
       $index->delete();
-      
+
     if (!$index->exists())
       $index->create($settings);
       //var_dump($settings);
@@ -109,7 +109,7 @@ class elasticSearch {
     //$index->setSettings($settings);
   }
   /**/
-  
+
   function set ($document) {
     $this->client
       ->getIndex($document['index'])
@@ -117,7 +117,15 @@ class elasticSearch {
       ->addDocument(new \Elastica\Document($document['properties']['id'], $document['properties']))
     ;
   }
-  
+
+  function delete ($document) {
+    $this->client
+      ->getIndex($document['index'])
+      ->getType($document['type'])
+      ->deleteDocument(new \Elastica\Document($document['properties']['id'], $document['properties']))
+    ;
+  }
+
 }
 
 class elasticQuery implements ArrayAccess, Iterator, Countable {
@@ -129,7 +137,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     $this->client = $client;
     $this->query = $query;
   }
-  
+
   protected $buffer = array();
   protected $nextBufferOffset = 0;
   function ensureBufferData () {
@@ -145,7 +153,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
       }
     }
   }
-  
+
   function offsetExists ($offset) {
     assertTrue(false);
   }
@@ -166,7 +174,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
   function offsetUnset ($offset) {
     assertTrue(false);
   }
-  
+
   function count () {
     version_assert and assertTrue(count(debug_backtrace()) < 1024);
     list($search, $elasticQuery) = $this->elasticBind($this->query);
@@ -195,18 +203,18 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
   function current () {
     return $this->buffer[$this->key()];
   }
-  
+
   function next () {
     unset($this->buffer[$this->key()]);
     $this->position++;
   }
-  
+
   function one () {
     $this->ensureBufferData();
     version_assert and assertTrue($this->valid() && count($this) == 1);
     return $this->current();
   }
-  
+
   function opSlice ($from, $to) {
     version_assert and assertTrue(count(func_get_args()) == 2);
     $query = $this->query;
@@ -214,11 +222,11 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
     $query['limit'] = array($offset + $from, $offset + ($to == '$' ? count($this) : $to));
     return new self($this->client, $query);
   }
-  
+
   function elasticBind ($query) {
 
     $search = new Elastica\Search($this->client);
-    
+
     if (array_key_exists('select', $query)) {
       if (count($query['select']) == 1 && count(array_filter($query['select'], 'is_int')) == 0)
         $selects = array($query['select']);
@@ -232,9 +240,9 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
           $search->addType(current($select));
       }
     }
-    
+
     $rawQuery = array('query' => array('match_all' => (object) array()));
-    
+
     if (array_key_exists('where', $query))
       $rawQuery['query'] = self::parseWhere($query['where']);
 
@@ -258,17 +266,17 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
           $rawQuery['sort'][] = $v;
       }
     }
-    
+
     return array($search, new Elastica\Query($rawQuery));
   }
-  
+
   function executeElasticSearch ($query) {
-  
+
     list($search, $elasticQuery) = $this->elasticBind($query);
-  
+
     // overwrite default limit
     $elasticQuery->setSize($search->count($elasticQuery));
-    
+
     if (array_key_exists('limit', $query) && count($query['limit']) > 0) {
       $elasticQuery->setFrom($query['limit'][0]);
       if ($query['limit'][1] != '$')
@@ -277,7 +285,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
 
     return $search->search($elasticQuery);
   }
-  
+
   function elasticQuery () {
     return self::parseWhere($this->query['where']);
   }
@@ -285,7 +293,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
   static function parseWhere ($query) {
     version_assert and assertTrue(is_array($query));
     version_assert and assertTrue(count($query) <= 1);
-    
+
     if (in_array('and', array_keys($query))) {
       version_assert and assertTrue(count(array_filter($query['and'], 'is_int')) == 0);
       return array(
@@ -303,10 +311,10 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         ),
       );
     }
-    
+
     if (count($query) == 1) {
       $value = current($query);
-      
+
       $operator = 'term';
       if (is_array($value)) {
         $operator = $value['operator'];
@@ -316,12 +324,12 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         //$value[key($query)] = $fieldValue;
         //$value = $value['value'];
       }
-      
+
       if (in_array($operator, array('term', 'text')) && is_array($value)) {
         version_assert and assertTrue(count($value) == 1);
         $value = $value['value'];
       }
-      
+
       if ($operator == 'string') {
         return array(
           'query_string' => array(
@@ -330,7 +338,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
           ),
         );
       }
-      
+
       if ($operator == 'fuzzy_like_this') {
         $value['like_text'] = $value['value'];
         unset($value['value']);
@@ -345,7 +353,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         );
         /**/
       }
-      
+
       //if ($operator == 'fuzzy') {
       //  return array($operator => array(key($query) => $value));
       //}
@@ -353,16 +361,16 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
       //if (is_array($value) && count($value) == 1) {
       //if (is_string($value))
       //  return array('term' => array(key($query) => $value));
-      
+
       //if (is_array($value) && count($value) == 2)
       //  return array($value['operator'] => array(key($query) => $value['value']));
-      
+
       //assertTrue(false);
-      
+
       return array($operator => array(key($query) => $value));
       //return array($operator => $value);
     }
-      
+
     return array('match_all' => (object) array());
   }
 
