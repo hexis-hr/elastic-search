@@ -45,6 +45,8 @@ class elasticSearch {
         else
           $indexName = $mapping_['index']['name'];
 
+        version_assert and assertNotEqual($indexName, '');
+
         if (!array_key_exists($indexName, $indexes))
           $indexes[$indexName] = array(
             'types' => array(),
@@ -73,17 +75,15 @@ class elasticSearch {
     }
 
     foreach ($indexes as $indexName => $indexMapping) {
+      version_assert and assertNotEqual($indexName, '');
       $index = $this->client->getIndex($indexName);
 
-			if (false)
+      //if (false)
       if ($index->exists())
         $index->delete();
 
       if (!$index->exists())
         $index->create(array('analysis' => $indexMapping['analysis']));
-
-      //var_dump($index->getSettings());
-      //exit;
 
       foreach ($indexMapping['types'] as $typeName => $typeMapping) {
         $elasticMapping = new \Elastica\Type\Mapping();
@@ -234,6 +234,7 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         $selects = $query['select'];
       foreach ($selects as $select) {
         version_assert and assertTrue(is_array($select) && count($select) == 1);
+        version_assert and assertNotEqual(current($select), '');
         if (key($select) == 'index')
           $search->addIndex(current($select));
         if (key($select) == 'type')
