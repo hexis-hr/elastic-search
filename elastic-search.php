@@ -259,9 +259,9 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
         else if (is_array($v) && is_string(key($v)) && key($v) == 'score')
           $rawQuery['sort'][] = array('_score' => current($v));
         else if (is_string($v) && preg_match('/[\*\s]/', $v))
-          $rawQuery['query'] = array('custom_score' => array(
+          $rawQuery['query'] = array('function_score' => array(
             'query' => $rawQuery['query'],
-            'script' => $v,
+            'functions' => array(array('script_score' => array('script' => $v))),
           ));
         else
           $rawQuery['sort'][] = $v;
