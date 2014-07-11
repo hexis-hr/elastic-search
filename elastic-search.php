@@ -258,11 +258,20 @@ class elasticQuery implements ArrayAccess, Iterator, Countable {
           $rawQuery['sort'][] = '_score';
         else if (is_array($v) && is_string(key($v)) && key($v) == 'score')
           $rawQuery['sort'][] = array('_score' => current($v));
-        else if (is_string($v) && preg_match('/[\*\s]/', $v))
-          $rawQuery['query'] = array('function_score' => array(
-            'query' => $rawQuery['query'],
-            'functions' => array(array('script_score' => array('script' => $v))),
-          ));
+        else if (is_string($v) && strpos($v, 'script:') === 0)
+          // http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/modules-scripting.html
+          $rawQuery['query'] = array(
+            'function_score' => array(
+              'query' => $rawQuery['query'],
+              'functions' => array(
+                array(
+                  'script_score' => array(
+                    'script' => trim(substr($v, strlen('script:')))
+                  ),
+                ),
+              ),
+            ),
+          );
         else
           $rawQuery['sort'][] = $v;
       }
